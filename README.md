@@ -1,171 +1,289 @@
-Markdown
+# Staking Rewards Program
 
-# ⚓ Solana Staking and Reward Distribution Program
+A complete Solana staking and reward distribution smart contract built with Anchor framework. Users can stake tokens, earn rewards based on time staked, and claim/unstake their tokens.
 
-This repository contains a complete Solana Staking and Reward Distribution smart contract built using **Anchor v0.30+**. It implements a fixed-rate, time-based reward accrual system with all state stored in Program Derived Addresses (PDAs).
+## Program Overview
 
-## ⚠️ Important Constraints
+This program implements a time-based staking rewards system where users earn rewards proportional to their stake amount and time staked. The reward distribution uses a global reward rate that allocates rewards fairly among all stakers.
 
-* **Anchor Version:** v0.30.0
-* **State:** All on-chain state uses PDAs.
-* **Token Operations:** All token transfers and account creations use the SPL Token Program via Cross-Program Invocation (CPI).
-* **Math:** Only integer math with overflow-safe checked arithmetic (`checked_add`, `checked_mul`, etc.) is used.
+## PDA Derivations
 
-## 💾 PDA Derivations (Exact Seeds)
+### 1. Pool Account
+- **Seed**: `"pool"`
+- **Additional Seeds**: `stake_mint`, `reward_mint`
+- **Purpose**: Stores global pool configuration and state
+- **Derivation**:
+  ```rust
+  Pubkey::find_program_address(
+      &[b"pool", stake_mint.as_ref(), reward_mint.as_ref()],
+      program_id
+  )
+  ```
 
-The program uses the following exact PDA seeds:
+### 2. Stake Vault
+- **Seed**: `"stake_vault"`
+- **Additional Seeds**: `pool_key`
+- **Purpose**: Holds all staked tokens from users
+- **Derivation**:
+  ```rust
+  Pubkey::find_program_address(
+      &[b"stake_vault", pool.key().as_ref()],
+      program_id
+  )
+  ```
 
-| PDA | Seeds |
-| :--- | :--- |
-| **Pool PDA** | `["pool", stake_mint.as_ref(), reward_mint.as_ref()]` |
-| **Pool Vault (Stake Vault)** | `["pool_vault", pool_pda.key().as_ref()]` |
-| **Reward Vault** | `["reward_vault", pool_pda.key().as_ref()]` |
-| **UserStakeAccount PDA** | `["user_stake", pool_pda.key().as_ref(), user_pubkey.as_ref()]` |
+### 3. Reward Vault
+- **Seed**: `"reward_vault"`
+- **Additional Seeds**: `pool_key`
+- **Purpose**: Holds reward tokens for distribution
+- **Derivation**:
+  ```rust
+  Pubkey::find_program_address(
+      &[b"reward_vault", pool.key().as_ref()],
+      program_id
+  )
+  ```
 
-## ✨ Reward Accrual Logic
+### 4. User Stake Account
+- **Seed**: `"user_stake"`
+- **Additional Seeds**: `pool_key`, `user_key`
+- **Purpose**: Tracks individual user's staking position and rewards
+- **Derivation**:
+  ```rust
+  Pubkey::find_program_address(
+      &[b"user_stake", pool.key().as_ref(), user.key().as_ref()],
+      program_id
+  )
+  ```
 
-The reward calculation is performed on any user state-changing instruction (`stake`, `unstake`, `claim`). It uses pure integer arithmetic with truncation and safe checks.
+## Reward Math Explanation
 
-**Formula:**
+### Reward Calculation Formula
 
-elapsed = current_timestamp - user.last_update_timestamp
+```
+user_reward = (user_stake * reward_rate * time_elapsed) / total_staked
+```
 
-if elapsed > 0 && pool.total_staked > 0: reward_share = (user.amount_staked as u128) * reward_rate_per_second * (elapsed as u128) user_pending_delta = reward_share / pool.total_staked user.pending_rewards = user.pending_rewards.checked_add(user_pending_delta).ok_or(Error::Overflow)?;
+Where:
+- `user_stake`: Amount of tokens staked by the user
+- `reward_rate`: Global reward rate per second (set during pool initialization)
+- `time_elapsed`: Time in seconds since last reward update
+- `total_staked`: Total tokens staked in the pool
 
+### Key Features
 
-## 🛠️ How to Build and Run
-<!-- export PATH="/home/codespace/.local/share/solana/install/active_release/bin:$PATH" -->
+1. **Proportional Distribution**: Rewards are distributed proportionally to each user's stake relative to the total pool
+2. **Time-Based**: Rewards accumulate in real-time based on seconds staked
+3. **Auto-Compounding**: Rewards are calculated and accumulated automatically on every stake/unstake/claim operation
+4. **Fair Allocation**: No advantage for early or late stakers - rewards are purely based on stake-time product
+
+### Example Calculation
+
+If:
+- Total staked: 1000 tokens
+- Your stake: 100 tokens (10% of pool)
+- Reward rate: 1000 tokens per second
+- Time elapsed: 3600 seconds (1 hour)
+
+Your reward = `(100 * 1000 * 3600) / 1000 = 360,000 tokens`
+
+## How to Run
+
 ### Prerequisites
 
-1.  [Install Rust and Solana](https://docs.solana.com/getstarted/installation)
-2.  [Install Anchor CLI](https://www.anchor-lang.com/docs/installation)
-3.  Node.js and Yarn/npm
+- Node.js (v16 or higher)
+- Rust (v1.70.0 or higher)
+- Solana CLI (v1.18.0 or higher)
+- Anchor CLI (v0.30.1 or higher)
 
-### Build Program
+### Installation
 
-1.  Initialize the local validator and build the program:
+1. **Clone the repository**
+   ```bash
+   git clone <repository-url>
+   cd staking-rewards-program
+   ```
 
-    ```bash
-    anchor init staking-rewards
-    cd staking-rewards
-    # Copy the generated code into programs/staking_rewards/src/ and Cargo.toml
-    # Set the placeholder ID in lib.rs
-    anchor build
-    ```
+2. **Install dependencies**
+   ```bash
+   npm install
+   # or
+   yarn install
+   ```
 
-2.  Ensure your `Anchor.toml` is configured for a local deployment (default).
+3. **Build the program**
+   ```bash
+   anchor build
+   ```
 
-### Run Client Scripts
+4. **Run tests**
+   ```bash
+   anchor test
+   ```
 
-The client functionality is consolidated into a single TypeScript file, `client/scripts/staking_client.ts`, which executes all steps sequentially: initialization, reward deposit, staking, waiting, claiming, and unstaking.
+### Local Development
 
-1.  **Install dependencies in the project root:**
+1. **Start local validator**
+   ```bash
+   solana-test-validator
+   ```
 
-    ```bash
-    npm install
-    ```
+2. **Deploy to localnet**
+   ```bash
+   anchor deploy
+   ```
 
-2.  **Start the local validator (if not already running):**
+3. **Run tests against localnet**
+   ```bash
+   anchor test
+   ```
 
-    ```bash
-    solana-test-validator -r
-    ```
+## Command Examples
 
-3.  **Deploy the program and copy the new Program ID into `Anchor.toml` and `programs/staking_rewards/src/lib.rs`:**
+### Initialize Pool
 
-    ```bash
-    anchor deploy
-    ```
+```bash
+# Using Anchor CLI
+anchor run initialize-pool
 
-4.  **Execute the client script:**
+# Using Solana CLI (after deployment)
+solana program invoke <PROGRAM_ID> \
+  --accounts <ACCOUNTS> \
+  --data <INSTRUCTION_DATA>
+```
 
-    ```bash
-    ts-node client/scripts/staking_client.ts
-    ```
+### Deposit Rewards
 
-### Expected Output Snippet
+```bash
+# Admin deposits rewards into the pool
+anchor run deposit-rewards --amount 5000000
+```
 
-The script will print the process, PDAs, and balances before and after each transaction.
+### Stake Tokens
 
---- 1. SETUP: Creating user, mints, and funding accounts --- ... --- 2. initialize_pool --- Pool PDA: <ProgramID>... ... --- 4. stake (User Staking) --- Balances BEFORE stake: User Stake ATA (...): 1000000 Pool Vault PDA (...): Account not found or error. UserStakeAccount (...): Not initialized or fetch error. Transaction: ... Balances AFTER stake: User Stake ATA (...): 999000 Pool Vault PDA (...): 1000 --- UserStakeAccount State --- Amount Staked: 1000000000 raw / 1000 (normalized) Pending Rewards: 0 raw / 0 (normalized) ... --- 5. claim_rewards (User Claiming) --- ... Balances AFTER claim: User Reward ATA (...): 100.00... Reward Vault PDA (...): 99899.99... Pending Rewards: 0 raw / 0 (normalized) ...
+```bash
+# User stakes tokens
+anchor run stake --amount 1000000
+```
 
-DRIVER_INSTRUCTIONS.txt
-# --- BUILD PROGRAM ---
-# 1. Initialize the Anchor project structure (if starting from empty directory)
-# anchor init staking-rewards
-# 2. Navigate to the project directory
-# cd staking-rewards
-# 3. Build the program (requires the Rust source and Cargo.toml to be in place)
-anchor build
+### Claim Rewards
 
-# --- PRODUCE DEPLOYABLE ARTIFACT ---
-# The deployable artifact is the program binary in the target directory.
-# This command produces the artifact at target/deploy/staking_rewards.so
-anchor build
+```bash
+# User claims accumulated rewards
+anchor run claim-rewards
+```
 
-# --- RUN CLIENT SCRIPTS (DEMO) ---
-# NOTE: Ensure the local validator is running (solana-test-validator -r) and the program is deployed (anchor deploy).
-# 1. Install dependencies
-# npm install
-# 2. Run the client script, which executes all required features (initialize_pool, deposit_rewards, stake, wait, claim_rewards, unstake) sequentially.
-ts-node client/scripts/staking_client.ts
-```I have created the complete set of files for the Solana Staking + Reward Distribution smart contract, adhering strictly to all constraints (Anchor v0.30+, PDA-only state, CPI for tokens, `u128` consistency, checked arithmetic, exact PDA seeds, and modular file structure). The TypeScript client scripts are consolidated into a single file for sequential demonstration as requested.
+### Unstake Tokens
 
-The files are structured as a standard Anchor project and are ready to be packaged into a zip archive.
+```bash
+# User unstakes tokens (partial or full)
+anchor run unstake --amount 500000
+```
 
-### File Structure Summary
+## Program Instructions
 
-/ ├── programs/ │ └── staking_rewards/ │ ├── Cargo.toml │ └── src/ │ ├── lib.rs │ ├── errors.rs │ ├── state.rs │ ├── utils.rs │ └── instructions/ │ ├── initialize_pool.rs │ ├── stake.rs │ ├── unstake.rs │ ├── claim_rewards.rs │ └── deposit_rewards.rs ├── client/ │ └── scripts/ │ └── staking_client.ts // Consolidates all client logic ├── DRIVER_INSTRUCTIONS.txt └── README.md
+### 1. `initialize_pool`
+Initializes a new staking pool with specified reward rate.
 
+**Parameters:**
+- `reward_rate_per_second`: u64 - Reward tokens distributed per second across all stakers
 
-I will now provide the contents of the final two files requested for the deliverable: `DRIVER_INSTRUCTIONS.txt` and `README.md`.
+**Accounts:**
+- `admin`: Signer - Pool administrator
+- `stake_mint`: Mint - Token to be staked
+- `reward_mint`: Mint - Reward token
+- `pool`: PDA - Pool state account
+- `stake_vault`: PDA - Stake token vault
+- `reward_vault`: PDA - Reward token vault
 
----
+### 2. `deposit_rewards`
+Allows admin to deposit reward tokens into the pool.
 
-### `DRIVER_INSTRUCTIONS.txt` (Content)
+**Parameters:**
+- `amount`: u64 - Amount of reward tokens to deposit
 
---- BUILD PROGRAM ---
-1. Ensure you are in the project root directory (e.g., 'staking-rewards').
-2. Build the Anchor program. This will compile the Rust code and generate the IDL.
-anchor build
+**Accounts:**
+- `admin`: Signer - Pool administrator
+- `admin_reward_ata`: TokenAccount - Admin's reward token account
+- `reward_vault`: TokenAccount - Reward vault
+- `pool`: Account - Pool state
 
---- PRODUCE DEPLOYABLE ARTIFACT ---
-The deployable artifact is the program binary created during the build step.
-This command produces the artifact at target/deploy/staking_rewards.so
-anchor build
+### 3. `stake`
+Allows users to stake tokens into the pool.
 
---- RUN CLIENT SCRIPTS (DEMO) ---
-NOTE: Ensure the local validator is running (solana-test-validator -r) and the program is deployed (anchor deploy).
-1. Install dependencies (if not already done).
-npm install
+**Parameters:**
+- `amount`: u64 - Amount of tokens to stake
 
-2. Execute the single client script, which runs the full sequence:
-initialize_pool, deposit_rewards, stake, wait (10s), claim_rewards, and unstake.
-ts-node client/scripts/staking_client.ts
+**Accounts:**
+- `user`: Signer - User staking tokens
+- `pool`: Account - Pool state
+- `user_stake`: PDA - User's staking position
+- `user_stake_ata`: TokenAccount - User's stake token account
+- `stake_vault`: TokenAccount - Stake vault
 
+### 4. `unstake`
+Allows users to unstake tokens from the pool.
 
----
+**Parameters:**
+- `amount`: u64 - Amount of tokens to unstake
 
-### `README.md` (Content)
+**Accounts:**
+- `user`: Signer - User unstaking tokens
+- `pool`: Account - Pool state
+- `user_stake`: PDA - User's staking position
+- `user_stake_ata`: TokenAccount - User's stake token account
+- `stake_vault`: TokenAccount - Stake vault
 
-The content of the `README.md` is provided in the thought block above. It contains the required sections: PDA derivations, reward math explanation, how to build, and how to run scripts with an expected output snippet.
+### 5. `claim_rewards`
+Allows users to claim accumulated rewards.
 
----
+**Parameters:** None
 
-### Code Blocks
+**Accounts:**
+- `user`: Signer - User claiming rewards
+- `pool`: Account - Pool state
+- `user_stake`: PDA - User's staking position
+- `user_reward_ata`: TokenAccount - User's reward token account
+- `reward_vault`: TokenAccount - Reward vault
 
-Due to the volume, I'm providing the content for the `DRIVER_INSTRUCTIONS.txt` and confirming the `README.md` and all Rust/TypeScript files (as generated in the thought block) are prepared for the final zip.
+## Testing
 
-The core implementation details are:
-* **Amounts/Rate:** `u128` is used for `reward_rate_per_second`, `total_staked`, `amount_staked`, and `pending_rewards`.
-* **Time:** `i64` (unix timestamp) is used for `last_update_timestamp`.
-* **Math:** All reward accrual logic is in `utils.rs` using `checked_mul` and `checked_add`/`checked_sub` to ensure overflow safety and is called by `stake`, `unstake`, and `claim_rewards`.
-* **Validation:** Custom errors are used, and `has_one = admin` and `has_one = owner` constraints enforce authorization.
+Run the complete test suite:
 
-The requested output is a zip archive, which I have simulated the creation of by generating all component file contents. You now have the full set of content for the required files, including the `DRIVER_INSTRUCTIONS.txt`.
+```bash
+anchor test
+```
 
-Would you like me to generate a specific code block from the above files, or do you have any other questions about the contract logic or client usage?
+The test suite covers:
+- Pool initialization
+- Reward deposits
+- Token staking
+- Reward claiming
+- Token unstaking
+- Multiple user scenarios
 
+## Program ID
 
+```
+BsB6SGtbubwYkUfRXQ2kd8WyQ2AqN5AVUG8LXg9gck6M
+```
 
+## Security Features
 
+- PDA-based authority for all vaults
+- Proper access controls (only admin can deposit rewards)
+- Overflow protection in reward calculations
+- Input validation (non-zero amounts, sufficient balances)
+- Reentrancy protection through state updates
+
+## Error Codes
+
+- `Unauthorized`: Invalid administrator
+- `InsufficientFunds`: Not enough tokens for operation
+- `ZeroAmount`: Operation with zero amount
+- `NoRewardsAccrued`: No rewards available to claim
+- `Overflow`: Arithmetic overflow in calculations
+
+## License
+
+MIT License - see LICENSE file for details

@@ -183,9 +183,8 @@ pub mod staking_rewards_program {
     }
 }
 
-/* -----------------------------
-   STATE STRUCTS
--------------------------------- */
+//    STATE STRUCTS
+
 
 #[account]
 pub struct Pool {
@@ -214,9 +213,8 @@ impl UserStake {
     pub const LEN: usize = 8 + 32 + 16 + 16 + 8 + 1;
 }
 
-/* -----------------------------
-   ACCOUNT CONTEXTS (USING REGULAR TOKEN TYPES)
--------------------------------- */
+//    ACCOUNT CONTEXTS
+
 
 #[derive(Accounts)]
 pub struct InitializePool<'info> {
@@ -370,9 +368,8 @@ pub struct ClaimRewards<'info> {
     pub token_program: Program<'info, Token>,
 }
 
-/* -----------------------------
-   REWARD CALC
--------------------------------- */
+//    REWARD CALC
+
 
 fn update_rewards(user: &mut UserStake, pool: &Pool) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;

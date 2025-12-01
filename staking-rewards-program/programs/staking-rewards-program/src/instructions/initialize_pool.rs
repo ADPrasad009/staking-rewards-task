@@ -1,20 +1,16 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{Mint, TokenAccount, TokenInterface};
+use anchor_spl::token::{Token, Mint, TokenAccount};
+
 use crate::state::Pool;
 
 #[derive(Accounts)]
-#[instruction(reward_rate_per_second: u128)]
 pub struct InitializePool<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
 
-    /// stake mint
-    pub stake_mint: InterfaceAccount<'info, Mint>,
+    pub stake_mint: Account<'info, Mint>,
+    pub reward_mint: Account<'info, Mint>,
 
-    /// reward mint
-    pub reward_mint: InterfaceAccount<'info, Mint>,
-
-    /// Pool PDA: ["pool", stake_mint, reward_mint]
     #[account(
         init,
         payer = admin,
@@ -24,15 +20,42 @@ pub struct InitializePool<'info> {
     )]
     pub pool: Account<'info, Pool>,
 
-    /// pool stake vault PDA (Unchecked) - will be created via CPI
-    #[account(seeds = [b"pool_vault", pool.key().as_ref()], bump)]
-    pub pool_stake_vault: UncheckedAccount<'info>,
+    #[account(
+        init,
+        payer = admin,
+        seeds = [b"stake_vault", pool.key().as_ref()],
+        bump,
+        token::mint = stake_mint,
+        token::authority = pool,
+    )]
+    pub stake_vault: Account<'info, TokenAccount>,
 
-    /// reward vault PDA (Unchecked) - will be created via CPI
-    #[account(seeds = [b"reward_vault", pool.key().as_ref()], bump)]
-    pub reward_vault: UncheckedAccount<'info>,
+    #[account(
+        init,
+        payer = admin,
+        seeds = [b"reward_vault", pool.key().as_ref()],
+        bump,
+        token::mint = reward_mint,
+        token::authority = pool,
+    )]
+    pub reward_vault: Account<'info, TokenAccount>,
 
-    pub token_program: Interface<'info, TokenInterface>,
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
+}
+
+pub fn initialize_pool(
+    ctx: Context<InitializePool>,
+    reward_rate_per_second: u64,
+) -> Result<()> {
+    let pool = &mut ctx.accounts.pool;
+
+    pool.admin = ctx.accounts.admin.key();
+    pool.stake_mint = ctx.accounts.stake_mint.key();
+    pool.reward_mint = ctx.accounts.reward_mint.key();
+    pool.reward_rate_per_second = reward_rate_per_second;
+    pool.total_staked = 0;
+    pool.bump = ctx.bumps.pool;
+
+    Ok(())
 }

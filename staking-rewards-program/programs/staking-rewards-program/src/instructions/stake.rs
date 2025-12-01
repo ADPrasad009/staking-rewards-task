@@ -1,45 +1,75 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{TokenAccount, TokenInterface, Mint};
-use crate::state::UserStakeAccount;
+use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+
+use crate::state::{Pool, UserStake};
+use crate::errors::StakingError;
+use crate::utils::update_rewards;
 
 #[derive(Accounts)]
-#[instruction(amount: u64)]
 pub struct Stake<'info> {
     #[account(mut)]
     pub user: Signer<'info>,
 
-    /// Pool PDA
-    #[account(
-        seeds = [b"pool", pool.stake_mint.as_ref(), pool.reward_mint.as_ref()],
-        bump = pool.bump,
-        has_one = stake_mint
-    )]
-    pub pool: Account<'info, crate::state::Pool>,
-
-    pub stake_mint: InterfaceAccount<'info, Mint>,
-
-    /// user's ATA for stake mint
     #[account(mut)]
-    pub user_stake_ata: InterfaceAccount<'info, TokenAccount>,
+    pub pool: Account<'info, Pool>,
 
-    /// pool stake vault
-    #[account(mut, seeds = [b"pool_vault", pool.key().as_ref()], bump)]
-    pub pool_stake_vault: InterfaceAccount<'info, TokenAccount>,
-
-    /// PDA authority for pool vault
-    pub pool_stake_vault_authority: UncheckedAccount<'info>,
-
-    /// user stake PDA
     #[account(
         init_if_needed,
         payer = user,
-        space = UserStakeAccount::LEN,
+        space = UserStake::LEN,
         seeds = [b"user_stake", pool.key().as_ref(), user.key().as_ref()],
         bump
     )]
-    pub user_stake_account: Account<'info, UserStakeAccount>,
+    pub user_stake: Account<'info, UserStake>,
 
-    pub token_program: Interface<'info, TokenInterface>,
+    #[account(
+        mut,
+        token::mint = pool.stake_mint,
+        token::authority = user
+    )]
+    pub user_stake_ata: Account<'info, TokenAccount>,
+
+    #[account(mut)]
+    pub stake_vault: Account<'info, TokenAccount>,
+
+    pub token_program: Program<'info, Token>,
     pub system_program: Program<'info, System>,
-    pub rent: Sysvar<'info, Rent>,
+}
+
+pub fn stake(ctx: Context<Stake>, amount: u64) -> Result<()> {
+    require!(amount > 0, StakingError::ZeroAmount);
+
+    let user = &mut ctx.accounts.user_stake;
+    let pool = &mut ctx.accounts.pool;
+
+    // Initialize user stake if needed
+    if user.owner == Pubkey::default() {
+        user.owner = ctx.accounts.user.key();
+        user.amount_staked = 0;
+        user.pending_rewards = 0;
+        user.last_update = Clock::get()?.unix_timestamp;
+        user.bump = ctx.bumps.user_stake;
+    }
+
+    update_rewards(user, pool)?;
+
+    // Transfer stake → vault
+    let cpi_accounts = Transfer {
+        from: ctx.accounts.user_stake_ata.to_account_info(),
+        to: ctx.accounts.stake_vault.to_account_info(),
+        authority: ctx.accounts.user.to_account_info(),
+    };
+
+    let cpi_ctx = CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+        cpi_accounts,
+    );
+
+    token::transfer(cpi_ctx, amount)?;
+
+    user.amount_staked += amount as u128;
+    pool.total_staked += amount as u128;
+    user.last_update = Clock::get()?.unix_timestamp;
+
+    Ok(())
 }

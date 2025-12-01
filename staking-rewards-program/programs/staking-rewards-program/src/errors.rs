@@ -4,16 +4,12 @@ use anchor_lang::prelude::*;
 pub enum StakingError {
     #[msg("Unauthorized")]
     Unauthorized,
-    #[msg("Insufficient funds")]
+    #[msg("Not enough tokens")]
     InsufficientFunds,
-    #[msg("Invalid mint")]
-    InvalidMint,
+    #[msg("Zero amount")]
+    ZeroAmount,
+    #[msg("No rewards available")]
+    NoRewardsAccrued,
     #[msg("Overflow")]
     Overflow,
-    #[msg("Zero amount not allowed")]
-    ZeroAmount,
-    #[msg("No rewards accrued")]
-    NoRewardsAccrued,
-    #[msg("Math error")]
-    MathError,
 }

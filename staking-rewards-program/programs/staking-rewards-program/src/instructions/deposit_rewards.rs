@@ -1,27 +1,44 @@
 use anchor_lang::prelude::*;
-use anchor_spl::token_interface::{TokenAccount, TokenInterface, Mint};
+use anchor_spl::token::{self, Token, TokenAccount, Transfer};
+
+use crate::state::Pool;
 use crate::errors::StakingError;
 
 #[derive(Accounts)]
-#[instruction(amount: u64)]
 pub struct DepositRewards<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
 
-    #[account(mut, seeds = [b"pool", pool.stake_mint.as_ref(), pool.reward_mint.as_ref()], bump = pool.bump, constraint = pool.admin == admin.key() @ StakingError::Unauthorized)]
-    pub pool: Account<'info, crate::state::Pool>,
-
-    /// admin ATA for reward mint
     #[account(mut)]
-    pub admin_reward_ata: InterfaceAccount<'info, TokenAccount>,
+    pub admin_reward_ata: Account<'info, TokenAccount>,
 
-    /// reward vault PDA
-    #[account(mut, seeds = [b"reward_vault", pool.key().as_ref()], bump)]
-    pub reward_vault: InterfaceAccount<'info, TokenAccount>,
+    #[account(mut)]
+    pub reward_vault: Account<'info, TokenAccount>,
 
-    pub reward_vault_authority: UncheckedAccount<'info>,
+    pub pool: Account<'info, Pool>,
 
-    pub reward_mint: InterfaceAccount<'info, Mint>,
+    pub token_program: Program<'info, Token>,
+}
 
-    pub token_program: Interface<'info, TokenInterface>,
+pub fn deposit_rewards(ctx: Context<DepositRewards>, amount: u64) -> Result<()> {
+    require_keys_eq!(
+        ctx.accounts.pool.admin,
+        ctx.accounts.admin.key(),
+        StakingError::Unauthorized
+    );
+
+    let cpi_accounts = Transfer {
+        from: ctx.accounts.admin_reward_ata.to_account_info(),
+        to: ctx.accounts.reward_vault.to_account_info(),
+        authority: ctx.accounts.admin.to_account_info(),
+    };
+
+    let cpi_ctx = CpiContext::new(
+        ctx.accounts.token_program.to_account_info(),
+        cpi_accounts,
+    );
+
+    token::transfer(cpi_ctx, amount)?;
+
+    Ok(())
 }

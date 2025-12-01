@@ -1,7 +1,8 @@
 # Staking Rewards Program
 
 A complete Solana staking and reward distribution smart contract built with Anchor framework. Users can stake tokens, earn rewards based on time staked, and claim/unstake their tokens.
-
+# solana path
+export PATH="/home/codespace/.local/share/solana/install/active_release/bin:$PATH"
 ## Program Overview
 
 This program implements a time-based staking rewards system where users earn rewards proportional to their stake amount and time staked. The reward distribution uses a global reward rate that allocates rewards fairly among all stakers.
